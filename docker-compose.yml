@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+
+  # MySql
+  mysqlDB:
+    image: mysql:8.0
+    container_name: canida_mysql
+    cap_add:
+      - SYS_NICE
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    env_file:
+      - '.env'
+    ports:
+      - '3306:3306'
+    volumes:
+      - dbVol:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD",  "ping"]
+      start_period: 30s
+      timeout: 5s
+      interval: 10s
+      retries: 3
+
+  # phpMyAdmin
+  phpmyadmin:
+    depends_on:
+      - mysqlDB
+    image: phpmyadmin/phpmyadmin
+    env_file:
+      - '.env'
+    container_name: canida_phpMyAdmin
+    restart: unless-stopped
+    ports:
+      - 8090:80
+    environment:
+      PMA_HOST: mysqlDB
+
+  # App
+  app:
+    env_file:
+      - '.env'
+    build: .
+    container_name: canida_app
+    command:
+      - /bin/bash
+      - -c
+      - |
+        flask db upgrade
+        python seeder.py
+        gunicorn -b 0.0.0.0:5000 --access-logfile - "app:app"
+    depends_on:
+      mysqlDB:
+        condition: service_healthy
+    links:
+      - "mysqlDB:localhost"
+    ports:
+      - 5000:5000
+    volumes:
+      - '.:/canida_app'
+
+volumes:
+  dbVol:
+    driver: local
+
